@@ -1,0 +1,195 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+```
+
+### Load data
+```{r load-data}
+load("movies.Rdata")
+```
+* * *
+## Part 1: Data
+
+Description of the Data:
+  The data set is comprised of 651 randomly sampled movies produced and released before 2016.
+
+  Some of these variables are only there for informational purposes and do not make any sense to include in a statistical analysis. It is up to you to decide which variables are meaningful and which should be omitted. For example information in the the actor1 through actor5 variables was used to determine whether the movie casts an actor or actress who won a best actor or actress Oscar.
+
+  You might also choose to omit certain observations or restructure some of the variables to make them suitable for answering your research questions.
+
+  When you are fitting a model you should also be careful about collinearity, as some of these variables may be dependent on each other.
+My interpretation of the information:
+  This is merely a collection of information on movies, and experimentation was carried.  Thus there is no grounds for any arguments of causality.  However, these were randomly sampled, so, you can genealize these.  
+There is one thing to note:  This is only generalizable to movies before 2016.
+
+* * *
+
+## Part 2: Research question
+  Is there a 4-way association comparing the month of the release of the film (thtr_rel_month), critic's score on Rotten Tomatoes (critics_score), the runtime of the film (runtime), and the MPAA rating of the film (mpaa_rating) against movie popularity or the mean audience score from IMDB and Rotten Tomatoes ((imdb_rating + .1(audience_score)/2) ?
+
+  I believe that month of the release, critics opinions, the length of the film, and the MPAA type can influence the way that audiences view films.  These variables are the best variables to choose because seasonal data may affect how people how people view movies that have longer running times, critics opinions may persuade or dissuade people from seeing movies, longer runtimes may affect movie popularity, and the MPAA rating might affect who can see the movies.
+  I excluded other variables because they were unrelated, or they were similar to variables that were already included.  The only exception is "genre," which I excluded because I already have an explanatory variable, and I would like to keep the model as simplistic as possible.
+
+* * *
+
+## Part 3: Exploratory data analysis
+The first thing that I will do is remove null values and check the data types.
+```{r}
+movies1 <- movies %>% filter(!is.na(runtime),!is.na(genre),!is.na(mpaa_rating),!is.na(critics_score),!is.na(imdb_rating),!is.na(thtr_rel_month),!is.na(audience_score))
+str(movies$runtime)
+str(movies$mpaa_rating)
+str(movies$critics_score)
+str(movies$thtr_rel_month)
+str(movies$imdb_rating)
+str(movies$audience_score)
+```
+The second thing I am going to do is to make a data frame containg the variables in the analysis:
+Explanatory Variables:
+#1). thtr_rel_month: the month of the release
+#2). critics_score: the critics score on Rotten Tomatoes
+#3). runtime: length of the film
+#4). mpaa_rating: MPAA rating
+
+Response Variable:
+#5). mar: Mean audience 10-star rating on IMDB and Rotten Tomatoes. I had to multiply the IMDB rating by 10 in order to be           able find its corresponding 10-star rating, so I can logically add it to the Rotten Tomatoes rating and thus              calculate this mean.
+The "mar" variable is stored in the "movies2" data frame:
+```{r}
+movies2 <- mutate(movies1, mar = ((audience_score + 10*imdb_rating)/2))
+```
+* * *
+## Part 4: Modeling
+  Before carring out the modelling, I will lay out the variables and methodology behind the model.  I have already explained the variables, and why I chose them in the Research Question section.  
+  After considering the variables, I will formulate the model and select the right model via the adjusted-r-squared-based forward selection method because this method is better for making reliable predictions than the p-value-based version.
+As a first step, I will create the 4-dimensional linear model:
+```{r}
+moviemodel <- lm(mar ~ thtr_rel_month + critics_score + runtime + mpaa_rating, data = movies2)
+```
+Next, I will check the 4 conditions for multilinear regression and assess the results:
+#1). Linearity of each variable with respect to the outcome.
+#2). Residuals are normally distributed around 0.
+#3). Independence of residuals.
+#4). Constant variability.
+```{r}
+#Condition #1: Linearity of each variable with respect to the outcome. 
+ggplot(moviemodel, aes(x = thtr_rel_month, y = mar)) + geom_point() + stat_smooth(method = "lm", se=FALSE)
+ggplot(moviemodel, aes(x = critics_score, y = mar)) + geom_point() + stat_smooth(method = "lm", se=FALSE)
+ggplot(moviemodel, aes(x = runtime, y = mar)) + geom_point() + stat_smooth(method = "lm", se=FALSE)
+ggplot(moviemodel, aes(x = mpaa_rating, y = mar)) + geom_point() + stat_smooth(method = "lm", se=FALSE)
+#Condition #2: Residuals are normally distributed around 0.
+ggplot(data = moviemodel, aes(sample = .resid)) + stat_qq() + stat_qq_line()
+#condition #3: Independence of residuals is already met.
+plot(moviemodel$residuals)
+#condition #4: Constant variability.
+ggplot(moviemodel, aes(x = .fitted, y = .resid)) + geom_point() + geom_hline(yintercept = 0, linetype = "dashed") + xlab("Fitted") + ylab("Residuals")
+
+```
+
+
+The only condition that wasn't entirely satisfactorily was condition #1 because all but one of the variables had a linear relationship the variable "mar."  Now, I will address collinearity by the following plot:
+```{r}
+ggpairs(movies2, columns = c(4,5,8,16,33))
+```
+
+
+Overall, these correlations coefficients are considerably low.  Thus, I would say that it would be safe to continue the analysis.
+Next, I will analyze the summary of the model:
+```{r}
+summary(moviemodel)
+```
+Lastly, I will carry out the adjusted-r-squared-based forward selection method:
+```{r}
+#current Adjusted R Squared
+0
+#round 1
+r1_runtime <- lm(mar ~ runtime, data = movies2)
+summary(r1_runtime)$adj.r.squared
+r1_relmonth <- lm(mar ~ thtr_rel_month, data = movies2)
+summary(r1_relmonth)$adj.r.squared
+r1_critscore <- lm(mar ~ critics_score, data = movies2)
+summary(r1_critscore)$adj.r.squared
+r1_mpaa <- lm(mar ~ mpaa_rating, data = movies2)
+summary(r1_mpaa)$adj.r.squared
+#Round 2:  critics_score had the highest score
+r2_runtime <- lm(mar ~ critics_score + runtime, data = movies2)
+summary(r2_runtime)$adj.r.squared
+r2_relmonth <- lm(mar ~ thtr_rel_month + critics_score, data = movies2)
+summary(r2_relmonth)$adj.r.squared
+r2_mpaa <- lm(mar ~ critics_score + mpaa_rating, data = movies2)
+summary(r2_mpaa)$adj.r.squared
+#Round 3: critics_score and runtime had the highest scores
+r3_relmonth <- lm(mar ~ thtr_rel_month + critics_score + runtime, data = movies2)
+summary(r3_relmonth)$adj.r.squared
+r3_mpaa <- lm(mar ~ critics_score + runtime + mpaa_rating, data = movies2)
+summary(r3_mpaa)$adj.r.squared
+#Round 4: critics_score, runtime, and mpaa_rating had the highest score.  This is the full model.
+full_model <- lm(mar ~ thtr_rel_month + critics_score + runtime + mpaa_rating, data = movies2)
+summary(full_model)$adj.r.squared
+```
+The maximum adjusted R-Squared is in round 3:  The 3 variables to consider are runtime, critics_score, and mpaa_rating.
+Thus, here is the final model and the analysis:
+```{r}
+summary(r3_mpaa)
+```
+Slope Analysis:
+
+runtime:  All else held equal and on average, for every additional minute, mean audience rating is predicted to increase by 0.007891
+
+critics_score: All else held equal and on average, for every additional score, mean audience rating is predicted to increase by 0.037845
+
+mpaa(unrated): All else held equal and on average, the mean audience rating is predicted to increase by 0.065936 in Unrated films over G films
+
+mpaa(R): All else held equal and on average, the mean audience rating is predicted to decrease by -2.12905 in R films over G films.
+
+mpaa(PG13): All else held equal and on average, the mean audience rating is predicted to decrease by -2.93199 in PG-13 films over G films.
+
+mpaa(PG): All else held equal and on average, the mean audience rating is predicted to decrease by -2.51443 in PG films over G films
+
+mpaa(NC-17): All else held equal and on average, the mean audience rating is predicted to decrease by -9.62826 in PG films over G films
+
+Intercept Analysis:
+
+mpaa(G): Since runtime can never be zero, the intercept can only be used to align the curve.
+
+
+* * *
+
+## Part 5: Prediction
+
+
+For the prediction, I will use the movie X-Men: Apocalypse from 2016.  Here are the sources of information (critics_score and audeince_score are multiplied by 10 because Rotten Tomatoes no longer has a 100-point system):
+
+#1). https://www.rottentomatoes.com/m/x_men_apocalypse
+
+#2). https://www.imdb.com/title/tt3385516/
+
+Now, I will enter this is in a data frame:
+```{r}
+apoc <- data.frame(runtime = 136, critics_score = 56.5, mpaa_rating = "PG-13", mar = 52.5)
+```
+Now, I calculate the predicted values, interval, and interpretation of the interval:
+```{r}
+predict(r3_mpaa,apoc)
+predict(r3_mpaa,apoc,interval = "prediction",level = .95)
+```
+Based on this intervals, I can say that I am 95% confident that, on average, true mean audience rating is above 45.23109 but below 84.28518.
+
+
+* * *
+## Part 6: Conclusion
+  After a thorough analysis of how the month of release, critics scores, MPAA ratings, length of movies relate to the mean audience rating, I must say these were not the best variables to choose to predict this quantity: The best predictor of the response variable was critics_score.  So, in order to predict what makes a great movie, the critic's score on Rotten Tomatoes can give a good prediction, but you should certainly add more variables.  
+  As far as what made some of the predictions inaccurate, I think the main issue for this only moderately strong model was because of poor data collection: I think that better kinds of data should have been collected, in particular financial data like budget and box office sales.  If critics scores, budget data, and box office sales data were combined, this would probably be a better predictive model.
